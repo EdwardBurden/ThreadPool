@@ -34,7 +34,7 @@ int main()
 
 	// Example 1, block main thread and wait for all tasks
 	std::future<std::uint64_t> future = pool.EnqueueTask(&ExampleClass::Fibonacci, &c, 40);
-	for (size_t i = 0; i < 20; i++)
+	for (int i = 0; i < 20; i++)
 	{
 		int value = RandomInt(1, 30);
 		auto temp = pool.EnqueueTask([&c, i, value]
@@ -45,13 +45,10 @@ int main()
 	}
 
 	pool.WaitForAllTasksComplete();
-	std::cout << "Example 1:" << future.get() << "\n"; //Future guaranteed to be ready
-	//  Example 1
-
-	std::this_thread::sleep_for(std::chrono::seconds(5));
+	std::cout << "Example 1:" << future.get() << "\n"; // Future guaranteed to be ready
 
 	// Example 2, block main thread waiting for one specific task
-	for (size_t i = 0; i < 20; i++)
+	for (int i = 0; i < 20; i++)
 	{
 		int value = RandomInt(40, 45);
 		auto temp = pool.EnqueueTask([&c, i, value]
@@ -63,13 +60,10 @@ int main()
 	future = pool.EnqueueTask(&ExampleClass::Fibonacci, &c, 10);
 	auto number = future.get();
 	std::cout << "Example 2:" << number << "\n";
-	// Example 2
-
 	pool.WaitForAllTasksComplete(); //wait for all others before starting next example
-	std::this_thread::sleep_for(std::chrono::seconds(5));
 
-	// Example 3, start tasks and dont block main thread. Waits for all tasks be compelte
-	for (size_t i = 0; i < 20; i++)
+	// Example 3, start tasks and dont block main thread. Waits for all tasks be complete
+	for (int i = 0; i < 20; i++)
 	{
 		int value = RandomInt(40, 45);
 		auto temp = pool.EnqueueTask([&c, i, value]
@@ -85,10 +79,9 @@ int main()
 	}
 	number = future.get();
 	std::cout << "Example 3:" << number << "\n";
-	//  Example 3
 
 	// Example 4, only waiting for the task we care about, but not blocking main thread
-	for (size_t i = 0; i < 20; i++)
+	for (int i = 0; i < 20; i++)
 	{
 		int value = RandomInt(40, 45);
 		auto temp = pool.EnqueueTask([&c, i, value]
@@ -103,7 +96,7 @@ int main()
 		//Do something else while waiting.
 	}
 	number = future.get();
-	std::cout << "Example 4:" << number << "\n";
+	std::cout << "Example 4:" << number << "\n"; // Chance the output will be mangled in debug since other threads are potentially writting to the console.
 	// Example 4 
 
 	return 0;

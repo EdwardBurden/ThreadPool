@@ -27,9 +27,9 @@ public:
 	WorkerThread& operator=(const WorkerThread&) = delete;
 	WorkerThread(WorkerThread&&) = delete;
 	WorkerThread& operator=(WorkerThread&&) = delete;
+	~WorkerThread();
 
 	void Run();
-	~WorkerThread();
 	bool IsActive() const { return m_isActive; }
 
 private:
@@ -50,8 +50,8 @@ public:
 	ThreadPool& operator=(const ThreadPool&) = delete;
 	ThreadPool(ThreadPool&&) = delete;
 	ThreadPool& operator=(ThreadPool&&) = delete;
+	~ThreadPool();
 
-	// TODO comment about how future maybe cause an error if thradpool has already shutdown.
 	template<typename F, typename... Args>
 	auto EnqueueTask(F&& f, Args&&... args)
 	{
@@ -69,7 +69,7 @@ public:
 		m_condition.notify_one();
 		return future;
 	}
-	~ThreadPool();
+
 	bool HasTasks();
 	bool WorkersActive();
 	void WaitForAllTasksComplete();
@@ -82,7 +82,6 @@ private:
 	std::mutex m_queueLock;
 	std::condition_variable m_condition;
 };
-
 
 //WorkerThread
 inline WorkerThread::WorkerThread(ThreadPool* pool, int index)
