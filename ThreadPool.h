@@ -1,56 +1,57 @@
 #pragma once
-//general
-#include <iostream>
+//General
 #include <vector>
-#include <forward_list>
 #include <functional>
 #include <memory>
 #include <queue>
 #include <type_traits>
 #include <algorithm>
 
-//concurrency
+//Concurrency
 #include <thread>
 #include <mutex>
 #include <atomic>
-
 #include <condition_variable>
 #include <future>
-std::mutex consoleMutex;
+
+#ifdef THREADPOOL_DEBUG
+inline std::mutex consoleMutex;
+#endif //THREADPOOL_DEBUG
 
 class ThreadPool;
 class WorkerThread
 {
 public:
-	WorkerThread();
 	WorkerThread(ThreadPool* pool, int index);
-
 	WorkerThread(const WorkerThread&) = delete;
 	WorkerThread& operator=(const WorkerThread&) = delete;
+	WorkerThread(WorkerThread&&) = delete;
+	WorkerThread& operator=(WorkerThread&&) = delete;
 
-	WorkerThread(WorkerThread&&);
-	WorkerThread& operator=(WorkerThread&&);
 	void Run();
-	void Stop();
 	~WorkerThread();
 	bool IsActive() const { return m_isActive; }
 
 private:
+	std::atomic<bool> m_isActive{ false };
 	ThreadPool* m_pool;
 	std::thread m_thread;
 	int m_index;
-	std::atomic<bool> m_isActive;
 };
 
 class ThreadPool
 {
 public:
+
+	friend class WorkerThread;
+
 	ThreadPool(size_t size);
 	ThreadPool(const ThreadPool&) = delete;
 	ThreadPool& operator=(const ThreadPool&) = delete;
 	ThreadPool(ThreadPool&&) = delete;
 	ThreadPool& operator=(ThreadPool&&) = delete;
 
+	// TODO comment about how future maybe cause an error if thradpool has already shutdown.
 	template<typename F, typename... Args>
 	auto EnqueueTask(F&& f, Args&&... args)
 	{
@@ -70,143 +71,143 @@ public:
 	}
 	~ThreadPool();
 	bool HasTasks();
-	bool ThreadsActive();
-	bool StopFlagActive() const { return m_stopFlag; }
-	std::condition_variable& GetRunCondition() { return m_condition; }
-	std::mutex& GetQueueLock() { return m_queueLock; }
-	std::queue<std::function<void()>>& GetTasks() { return m_tasks; }
+	bool WorkersActive();
+	void WaitForAllTasksComplete();
 
 private:
+	std::atomic<bool> m_stopFlag{ false };
 	std::vector<std::unique_ptr<WorkerThread>> m_workers;
 	std::queue<std::function<void()>> m_tasks;
 	size_t m_size;
 	std::mutex m_queueLock;
 	std::condition_variable m_condition;
-	bool m_stopFlag;
 };
 
-//////WorkerThread
 
-WorkerThread::WorkerThread()
-{
-	m_pool = nullptr;
-}
-
-WorkerThread::WorkerThread(ThreadPool* pool, int index)
+//WorkerThread
+inline WorkerThread::WorkerThread(ThreadPool* pool, int index)
 {
 	m_pool = pool;
 	m_index = index;
 	m_thread = std::thread(&WorkerThread::Run, this);
-	m_isActive = false;
+
+#ifdef THREADPOOL_DEBUG
+	{
+		std::lock_guard lock(consoleMutex);
+		printf("%i Worker Alive\n", m_index);
+	}
+#endif //THREADPOOL_DEBUG
 }
 
-WorkerThread::WorkerThread(WorkerThread&& other)
-{
-	m_thread = std::move(other.m_thread);
-	m_pool = other.m_pool;
-	m_index = other.m_index;
-}
-
-WorkerThread& WorkerThread::operator=(WorkerThread&& other)
-{
-	if (this == &other)
-		return *this;
-
-	m_thread = std::move(other.m_thread);
-	m_pool = other.m_pool;
-	m_index = other.m_index;
-	return *this;
-}
-
-
-WorkerThread::~WorkerThread()
+inline WorkerThread::~WorkerThread()
 {
 	if (m_thread.joinable())
 		m_thread.join();
+
+#ifdef THREADPOOL_DEBUG
+	{
+		std::lock_guard lock(consoleMutex);
+		printf("%i Worker Dead\n", m_index);
+	}
+#endif //THREADPOOL_DEBUG
 }
 
-void WorkerThread::Run()
+inline void WorkerThread::Run()
 {
 	while (true)
 	{
 		std::function<void()> currentTask;
 		{
-			std::unique_lock<std::mutex> lock(m_pool->GetQueueLock());
-			m_pool->GetRunCondition().wait(lock, [this]
+			std::unique_lock<std::mutex> lock(m_pool->m_queueLock);
+			m_pool->m_condition.wait(lock, [this]
 				{
-					auto condtionPassed = !m_pool->GetTasks().empty() || m_pool->StopFlagActive();
-					return condtionPassed;
+					auto conditionPassed = !m_pool->m_tasks.empty() || m_pool->m_stopFlag;
+					return conditionPassed;
 				});
-			if (m_pool->StopFlagActive())
-			{
+			if (m_pool->m_stopFlag)
 				return;
-			}
 
-			currentTask = std::move(m_pool->GetTasks().front());
-			m_pool->GetTasks().pop();
+			currentTask = std::move(m_pool->m_tasks.front());
+			m_pool->m_tasks.pop();
 		}
-		m_isActive = true; 
+		m_isActive = true;
+
+#ifdef THREADPOOL_DEBUG
 		{
 			std::lock_guard lock(consoleMutex);
-			printf("%i Start", m_index);
-			printf("\n");
+			printf("%i Start\n", m_index);
 		}
-		currentTask(); 
+#endif //THREADPOOL_DEBUG
+		currentTask();
+#ifdef THREADPOOL_DEBUG
 		{
 			std::lock_guard lock(consoleMutex);
-			printf("%i End", m_index);
-			printf("\n");
+			printf("%i End\n", m_index);
 		}
+#endif //THREADPOOL_DEBUG
 		m_isActive = false;
+		m_pool->m_condition.notify_all();
 	}
 }
 
-void WorkerThread::Stop()
-{
-	if (m_thread.joinable())
-		m_thread.join();
-}
-
-//////ThreadPool
-
-ThreadPool::ThreadPool(size_t size)
+//ThreadPool
+inline ThreadPool::ThreadPool(size_t size)
 {
 	unsigned int max = std::thread::hardware_concurrency();
-	size = std::clamp((int)size, 1, (int)max);
-	m_size = size;
-	m_stopFlag = false;
-	m_workers.reserve(size);
-	for (size_t i = 0; i < size; i++)
+	if (max == 0)
+		max = 1;
+	m_size = std::clamp(static_cast<unsigned int>(size), 1u, max);
+	m_workers.reserve(m_size);
+	for (size_t i = 0; i < m_size; i++)
 	{
 		m_workers.emplace_back(std::make_unique<WorkerThread>(this, i));
 	}
+#ifdef THREADPOOL_DEBUG
+	{
+		std::lock_guard lock(consoleMutex);
+		printf("Pool Alive Size:%zu\n", m_size);
+	}
+#endif //THREADPOOL_DEBUG
 }
 
-ThreadPool::~ThreadPool()
+inline ThreadPool::~ThreadPool()
 {
 	{
-		std::unique_lock<std::mutex> lock(m_queueLock);
+		std::lock_guard lock(m_queueLock);
 		m_stopFlag = true;
 	}
 	m_condition.notify_all();
 	m_workers.clear();
+
+#ifdef THREADPOOL_DEBUG
+	{
+		std::lock_guard lock(consoleMutex);
+		printf("Pool Dead\n");
+	}
+#endif //THREADPOOL_DEBUG
 }
 
-bool ThreadPool::HasTasks()
+inline bool ThreadPool::HasTasks()
 {
 	std::lock_guard lock(m_queueLock);
-	return m_tasks.size() > 0;
+	return !m_tasks.empty();
 }
 
-bool ThreadPool::ThreadsActive()
+inline bool ThreadPool::WorkersActive()
 {
-	bool flag = false;
 	for (auto& worker : m_workers)
 	{
 		if (worker->IsActive())
-		{
 			return true;
-		}
 	}
-	return flag;
+	return false;
+}
+
+inline void ThreadPool::WaitForAllTasksComplete()
+{
+	std::unique_lock<std::mutex> lock(m_queueLock);
+	m_condition.wait(lock, [this]
+		{
+			return m_tasks.empty() && !WorkersActive();
+		});
 }

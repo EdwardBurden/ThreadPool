@@ -1,52 +1,15 @@
-//general
+//General
 #include <iostream>
-#include <vector>
-#include <forward_list>
 #include <functional>
+#include <random>
 
-
-//concurrency
-#include <thread>
-#include <mutex>
-#include <atomic>
-#include <queue>
-#include <condition_variable>
-#include <future>
-
-//
+//ThreadPool
 #include "ThreadPool.h"
 
-
-
-void print(const char* string)
-{
-	std::lock_guard lock(consoleMutex);
-///	printf("Thread_%i ", std::this_thread::get_id());
-	printf(string);
-	printf("\n");
-}
-
-std::uint64_t HeavyWork(std::uint64_t iterations)
-{
-	//print("HeavyWork Start");
-	volatile std::uint64_t value = 0;
-
-	for (std::uint64_t i = 0; i < iterations; ++i)
-	{
-		value += (i * 2654435761ULL) ^ (value >> 3);
-		value ^= (value << 7);
-	}
-	//print("HeavyWork End");
-	return value;
-}
-
-class  ExampleClass
+class ExampleClass
 {
 public:
-	ExampleClass();
-	~ExampleClass();
-
-	std::uint64_t Fibonacci(std::uint64_t n)
+	inline std::uint64_t Fibonacci(std::uint64_t n)
 	{
 		if (n <= 1)
 			return n;
@@ -54,19 +17,7 @@ public:
 
 	}
 private:
-
 };
-
-ExampleClass::ExampleClass()
-{
-}
-
-ExampleClass::~ExampleClass()
-{
-}
-
-
-#include <random>
 
 int RandomInt(int min, int max)
 {
@@ -80,29 +31,31 @@ int main()
 {
 	ExampleClass c;
 	ThreadPool pool(4);
-	//std::future<std::uint64_t> future = pool.EnqueueTask(&ExampleClass::Fibonacci, &c, 5);
-
-	/*for (size_t i = 0; i < 100; i++)
-	{
-		std::future<std::uint64_t> future = pool.EnqueueTask([] {return HeavyWork(10000); });
-	}*/
-	for (size_t i = 0; i < 100; i++)
+	std::future<std::uint64_t> future = pool.EnqueueTask(&ExampleClass::Fibonacci, &c, 40);
+	for (size_t i = 0; i < 5; i++)
 	{
 		int value = RandomInt(40, 50);
-		auto future = pool.EnqueueTask([&c, i, value]
+		auto temp = pool.EnqueueTask([&c, i, value]
 			{
-				//print("Fibonacci Start");
-				auto returnValue =  c.Fibonacci(value);
-				//print("Fibonacci End");
+				auto returnValue = c.Fibonacci(value);
 				return returnValue;
 			});
 	}
 
-	while (pool.HasTasks() || pool.ThreadsActive())
+	pool.WaitForAllTasksComplete();
+	std::cout << "Fibonacci Should be 102,334,155:" << future.get() << "\n";
+	std::this_thread::sleep_for(std::chrono::seconds(5));
+
+	for (size_t i = 0; i < 5; i++)
 	{
-		std::this_thread::sleep_for(std::chrono::seconds(2));
+		int value = RandomInt(40, 50);
+		auto future = pool.EnqueueTask([&c, i, value]
+			{
+				auto returnValue = c.Fibonacci(value);
+				return returnValue;
+			});
 	}
-	//auto waiting = future.get();
-	//std::cout << waiting;
+
+	pool.WaitForAllTasksComplete();
 	return 0;
 }
