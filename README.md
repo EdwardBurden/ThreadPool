@@ -49,3 +49,27 @@ target_compile_definitions(YourTarget PRIVATE
 ## Requirements
 - C++20
 - CMake 3.10+
+
+
+## Future Plans
+
+### Custom Task Class
+Replace raw `std::function` with a custom `Task` class to give better control and visibility over individual tasks.
+
+Planned features:
+- **Progress state** — query whether a task is pending, running, or complete without needing to hold a `std::future`
+- **Debug info** — task name/ID visible in debug logging so output shows which task started/ended rather than just which worker
+- **Completion callback** — provide a callback at enqueue time that fires automatically when that specific task finishes, so callers don't need to poll or block
+
+Planned usage:
+```cpp
+Task myTask(myFunction, arg1, arg2);
+myTask.SetCallback([]{ printf("Task done!\n"); });
+pool.EnqueueTask(myTask);
+
+// elsewhere, non-blocking check
+if (myTask.IsComplete())
+    // use result
+```
+
+This would make `std::future` optional rather than the only way to track task completion.
