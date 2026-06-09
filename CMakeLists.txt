@@ -14,5 +14,3 @@ else()
         $<$<CONFIG:Debug>:THREADPOOL_DEBUG>
     )
 endif()
-
-install(TARGETS ThreadPool RUNTIME DESTINATION .)
