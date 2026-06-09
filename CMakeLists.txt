@@ -3,7 +3,7 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 cmake_minimum_required(VERSION 3.10)
 project(ThreadPool VERSION 1.0)
 set(CMAKE_CXX_STANDARD 20)
-file(GLOB THREADPOOL "*.cpp" "*.h")
+file(GLOB THREADPOOL "src/*.cpp" "src/*.h")
 add_executable(${PROJECT_NAME} ${THREADPOOL})
 
 option(THREADPOOL_DEBUG_LOGGING "Enable threadpool debug logging" OFF)
